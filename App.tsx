@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Header from './components/Header';
-import AdsDashboard from './components/Dashboard';
-import OrdersDashboard from './components/OrdersDashboard';
-import Login from './components/Login';
-import { fetchDataFromApi } from './api';
-import type { Filters, RawDataRow, AnalyticsConfig, SkuAnalysisResult } from './types';
-import { LoadingIcon } from './components/icons';
-import { parseAdsCSV } from './parsers';
-import { useAnalytics } from './hooks/useAnalytics';
+import Header from './components/Header.tsx';
+import AdsDashboard from './components/Dashboard.tsx';
+import OrdersDashboard from './components/OrdersDashboard.tsx';
+import Login from './components/Login.tsx';
+import { fetchDataFromApi } from './api.ts';
+import type { Filters, RawDataRow, AnalyticsConfig, SkuAnalysisResult } from './types.ts';
+import { LoadingIcon } from './components/icons.tsx';
+import { parseAdsCSV } from './parsers.ts';
+import { useAnalytics } from './hooks/useAnalytics.ts';
 
 type Tab = 'ads' | 'orders';
 

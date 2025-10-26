@@ -1,4 +1,4 @@
-import { getExportUrl } from './parsers';
+import { getExportUrl } from './parsers.ts';
 
 /**
  * Этот файл симулирует вызов API на бэкенд.

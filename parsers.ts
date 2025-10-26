@@ -1,4 +1,4 @@
-import type { RawDataRow } from './types';
+import type { RawDataRow } from './types.ts';
 
 const parseCsvLine = (text: string): string[] => {
     const result: string[] = [];

@@ -1,6 +1,6 @@
 import React from 'react';
-import type { Filters, AnalyticsConfig } from '../types';
-import { RefreshIcon, ResetIcon, LogoutIcon } from './icons';
+import type { Filters, AnalyticsConfig } from '../types.ts';
+import { RefreshIcon, ResetIcon, LogoutIcon } from './icons.tsx';
 
 type Tab = 'ads' | 'orders';
 

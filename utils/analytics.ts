@@ -1,4 +1,4 @@
-import type { Status, AnalyticsConfig, Metric, SkuMetricsSet, SkuAnalysisResult } from '../types';
+import type { Status, AnalyticsConfig, Metric, SkuMetricsSet, SkuAnalysisResult } from '../types.ts';
 
 // Helper for safe division
 const safeDivide = (numerator: number, denominator: number): number | null => {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import type { SkuAnalysisResult, Status, Metric } from '../types';
-import { ChevronDownIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ArrowUpIcon, ArrowDownIcon } from './icons';
-import Tooltip from './Tooltip';
+import type { SkuAnalysisResult, Status, Metric } from '../types.ts';
+import { ChevronDownIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ArrowUpIcon, ArrowDownIcon } from './icons.tsx';
+import Tooltip from './Tooltip.tsx';
 
 const statusClasses: Record<Status, string> = {
     good: 'bg-green-500',

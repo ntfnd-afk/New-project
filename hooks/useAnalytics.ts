@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import type { RawDataRow, Filters, SkuAnalysisResult, AnalyticsConfig, DailyData } from '../types';
-import { calculateMetricsSet, getBannerAndStatus } from '../utils/analytics';
+import type { RawDataRow, Filters, SkuAnalysisResult, AnalyticsConfig, DailyData } from '../types.ts';
+import { calculateMetricsSet, getBannerAndStatus } from '../utils/analytics.ts';
 
 interface AggregatedData {
     spend: number;

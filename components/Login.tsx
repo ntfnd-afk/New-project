@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LoadingIcon } from './icons';
+import { LoadingIcon } from './icons.tsx';
 
 interface LoginProps {
     onLoginSuccess: () => void;

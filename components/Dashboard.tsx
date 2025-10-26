@@ -1,6 +1,6 @@
 import React from 'react';
-import type { SkuAnalysisResult } from '../types';
-import SkuCard from './SkuCard';
+import type { SkuAnalysisResult } from '../types.ts';
+import SkuCard from './SkuCard.tsx';
 
 interface AdsDashboardProps {
     data: SkuAnalysisResult[];

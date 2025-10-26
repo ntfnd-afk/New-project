@@ -1,5 +1,5 @@
 import React from 'react';
-import ChartPanel from './ChartPanel';
+import ChartPanel from './ChartPanel.tsx';
 
 const OrdersDashboard: React.FC = () => {
     return (
