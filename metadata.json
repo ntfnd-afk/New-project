@@ -1,0 +1,5 @@
+{
+  "name": "WB Ads Dashboard",
+  "description": "An interactive dashboard for analyzing Wildberries advertising campaign statistics, featuring KPIs and various charts for performance visualization.",
+  "requestFramePermissions": []
+}

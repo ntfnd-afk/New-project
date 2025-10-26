@@ -1,0 +1,17 @@
+import React from 'react';
+import type { SkuAnalysisResult } from '../types';
+import SkuCard from './SkuCard';
+
+interface AdsDashboardProps {
+    data: SkuAnalysisResult[];
+}
+
+const AdsDashboard: React.FC<AdsDashboardProps> = ({ data }) => {
+    return (
+        <div className="w-full h-full">
+           <SkuCard data={data} />
+        </div>
+    );
+};
+
+export default AdsDashboard;
