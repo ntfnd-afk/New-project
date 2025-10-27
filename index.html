@@ -15,7 +15,6 @@
     </style>
     
     <!-- 1. Зависимости для React (разрешаются через importmap) -->
-    <!-- Этот importmap, вероятно, предоставляется платформой. Мы будем использовать его. -->
     <script type="importmap">
     {
       "imports": {
@@ -34,17 +33,682 @@
   <body>
     <div id="root"></div>
     
-    <!-- 3. Запуск приложения. Babel найдёт этот тег, транспилирует его и все импорты, а затем выполнит как ES-модуль -->
+    <!-- 3. Запуск приложения. Весь код объединен в один скрипт для корректной транспиляции. -->
     <script type="text/babel" data-presets="react,typescript" data-type="module">
-      import React from 'react';
+      import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
       import { createRoot } from 'react-dom/client';
-      import App from './App.js';
+      import { createPortal } from 'react-dom';
 
+      // --- Inlined parsers.js ---
+      const parseCsvLine = (text) => {
+          const result = [];
+          let pos = 0;
+          let inQuotes = false;
+          let current = '';
+
+          while (pos < text.length) {
+              const char = text[pos];
+              if (inQuotes) {
+                  if (char === '"') {
+                      if (pos + 1 < text.length && text[pos + 1] === '"') {
+                          current += '"';
+                          pos++;
+                      } else {
+                          inQuotes = false;
+                      }
+                  } else {
+                      current += char;
+                  }
+              } else {
+                  if (char === '"') {
+                      inQuotes = true;
+                  } else if (char === ',') {
+                      result.push(current);
+                      current = '';
+                  } else {
+                      current += char;
+                  }
+              }
+              pos++;
+          }
+          result.push(current);
+          return result;
+      };
+
+      const parseAdsCSV = (csvText) => {
+          const lines = csvText.trim().split('\n');
+          if (lines.length < 2) return [];
+
+          if (lines[0].charCodeAt(0) === 0xFEFF) {
+              lines[0] = lines[0].substring(1);
+          }
+
+          const headers = parseCsvLine(lines[0]).map(h => h.trim());
+          
+          const headerMap = {
+              campaignId: headers.indexOf('ID кампании'),
+              trafficSource: headers.indexOf('Источник трафика'),
+              nmId: headers.indexOf('Артикул WB'),
+              productName: headers.indexOf('Название товара'),
+              date: headers.indexOf('Дата'),
+              shows: headers.indexOf('Показы'),
+              clicks: headers.indexOf('Клики'),
+              ctr: headers.indexOf('CTR %'),
+              spend: headers.indexOf('Затраты, ₽'),
+              added_to_cart: headers.indexOf('Добавления в корзину'),
+              orderedItems: headers.indexOf('Заказано товаров, шт'),
+              revenue: headers.indexOf('Заказано на сумму, ₽'),
+          };
+          
+          const requiredHeaderMap = {
+              campaignId: 'ID кампании',
+              trafficSource: 'Источник трафика',
+              nmId: 'Артикул WB',
+              date: 'Дата',
+              shows: 'Показы',
+              clicks: 'Клики',
+              spend: 'Затраты, ₽',
+              revenue: 'Заказано на сумму, ₽'
+          };
+          
+          const missingHeaders = Object.keys(requiredHeaderMap)
+              .filter(key => headerMap[key] === -1)
+              .map(key => requiredHeaderMap[key]);
+
+          if (missingHeaders.length > 0) {
+              throw new Error(`CSV должен содержать заголовки: ${missingHeaders.join(', ')}`);
+          }
+
+          const data = lines.slice(1).map(line => {
+              const values = parseCsvLine(line);
+              const parseNumber = (index) => {
+                  if (values[index] === undefined) return 0;
+                  const value = values[index];
+                  return Number(value.replace(',', '.')) || 0;
+              };
+              const getString = (index) => values[index] || '';
+              
+              const dateString = getString(headerMap.date);
+              let isoDate = dateString;
+              if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateString)) {
+                  const parts = dateString.split('.');
+                  isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+              }
+              
+              return {
+                  campaignId: getString(headerMap.campaignId),
+                  trafficSource: getString(headerMap.trafficSource),
+                  nmId: getString(headerMap.nmId),
+                  productName: getString(headerMap.productName),
+                  date: isoDate,
+                  shows: parseNumber(headerMap.shows),
+                  clicks: parseNumber(headerMap.clicks),
+                  ctr: parseNumber(headerMap.ctr),
+                  spend: parseNumber(headerMap.spend),
+                  added_to_cart: parseNumber(headerMap.added_to_cart),
+                  orderedItems: parseNumber(headerMap.orderedItems),
+                  revenue: parseNumber(headerMap.revenue),
+              };
+          }).filter(row => row.date && row.nmId);
+
+          return data;
+      };
+
+      const getExportUrl = (userInput) => {
+          if (!userInput) return '';
+
+          if (userInput.includes('/pub?output=csv') || userInput.includes('/export?format=csv')) {
+              return userInput;
+          }
+
+          let sheetId = '';
+          let gid = '';
+          
+          const urlRegex = /spreadsheets\/d\/([a-zA-Z0-9-_]+)/;
+          const match = userInput.match(urlRegex);
+          
+          if (match && match[1]) {
+              sheetId = match[1];
+              const gidRegex = /[#&]gid=([0-9]+)/;
+              const gidMatch = userInput.match(gidRegex);
+              if (gidMatch && gidMatch[1]) {
+                  gid = gidMatch[1];
+              }
+          } else if (/^[a-zA-Z0-9-_]{40,}$/.test(userInput.trim())) {
+              sheetId = userInput.trim();
+          }
+
+          if (sheetId) {
+              let url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+              if (gid) {
+                  url += `&gid=${gid}`;
+              }
+              return url;
+          }
+
+          return userInput;
+      };
+
+      // --- Inlined api.js ---
+      const URL_STORAGE_KEY_API = 'wb-ads-dashboard-urls';
+      const isUserAuthenticated = () => {
+          return sessionStorage.getItem('isAuthenticated') === 'true';
+      };
+      const CORS_PROXY = (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`;
+
+      const fetchDataFromApi = async (dataType) => {
+          if (!isUserAuthenticated()) {
+              throw new Error('Пользователь не авторизован.');
+          }
+
+          const storedUrls = sessionStorage.getItem(URL_STORAGE_KEY_API);
+          if (!storedUrls) {
+              throw new Error('URL таблицы не найден. Пожалуйста, войдите снова.');
+          }
+          
+          const urls = JSON.parse(storedUrls);
+          const sheetUrl = urls[dataType];
+
+          if (!sheetUrl) {
+            return '';
+          }
+
+          const exportUrl = getExportUrl(sheetUrl);
+          const proxiedUrl = CORS_PROXY(exportUrl);
+
+          try {
+              const response = await fetch(proxiedUrl);
+              
+              if (!response.ok) {
+                  throw new Error(`Ошибка сети: ${response.status} ${response.statusText}`);
+              }
+
+              const csvText = await response.text();
+
+              if (!csvText || csvText.trim().length === 0) {
+                   throw new Error('Источник данных вернул пустой ответ. Проверьте ссылку.');
+              }
+
+              if (csvText.trim().toLowerCase().startsWith('<html')) {
+                  throw new Error('Не удалось загрузить данные.\n\nПожалуйста, убедитесь, что доступ к Google Таблице открыт по ссылке (Anyone with the link can view).');
+              }
+
+              return csvText;
+
+          } catch (error) {
+              console.error("Failed to fetch data from Google Sheets:", error);
+              if (error instanceof Error) {
+                  throw new Error(`Не удалось загрузить данные. Причина: ${error.message}\n\nПроверьте ваше интернет-соединение и правильность ссылки.`);
+              }
+              throw new Error("Произошла неизвестная ошибка при загрузке данных.");
+          }
+      };
+
+      // --- Inlined utils/analytics.js ---
+      const safeDivide = (numerator, denominator) => {
+          if (denominator === 0) {
+              return numerator === 0 ? 0 : null;
+          }
+          if (!isFinite(denominator) || !isFinite(numerator)) return null;
+          return numerator / denominator;
+      };
+
+      const metricConfig = {
+          impressions: { formula: 'Сумма показов за период.', canCalculate: d => true, nullTooltip: '', statusTexts: { good: 'Достаточное количество показов.', warn: 'Показов маловато для репрезентативной статистики.', bad: 'Мало показов — товар проигрывает аукцион. Проверьте CPM/лимит/ставку.', }, isSimple: true, },
+          clicks: { formula: 'Сумма кликов за период.', canCalculate: d => true, nullTooltip: '', statusTexts: { good: 'Достаточное количество кликов.', warn: 'Кликов маловато для принятия решений.', bad: 'Низкая вовлечённость. Если CTR ок — поднимите CPM; если CTR низкий — правьте фото/заголовок.', }, isSimple: true, },
+          ctr: { formula: 'CTR = Клики / Показы × 100%', canCalculate: d => d.impressions > 0 || (d.impressions === 0 && d.clicks === 0), nullTooltip: 'Нет показов — CTR не рассчитывается.', statusTexts: { good: 'CTR высокий: карточка хорошо привлекает внимание.', warn: 'CTR средний: можно усилить фото/заголовок.', bad: 'CTR низкий: объявление не кликают. Обновите обложку, цену, текст.', }, unit: '%', },
+          cpc: { formula: 'CPC = Затраты / Клики', canCalculate: d => d.clicks > 0 || (d.clicks === 0 && d.spend === 0), nullTooltip: 'Клики отсутствуют — CPC не рассчитывается.', statusTexts: { good: 'Стоимость клика низкая.', warn: 'Стоимость клика средняя.', bad: 'Клик дорогой. Ставка/аукцион высокие.', }, unit: '₽', },
+          cpm: { formula: 'CPM = Затраты / (Показы / 1000)', canCalculate: d => d.impressions > 0 || (d.impressions === 0 && d.spend === 0), nullTooltip: 'Нет показов — CPM не рассчитывается.', statusTexts: { neutral: 'Стоимость 1000 показов. Помогает оценить конкуренцию и ставку в аукционе.', }, unit: '₽', },
+          cart_rate: { formula: '% в корзину = Добавления в корзину / Клики × 100%', canCalculate: d => d.clicks > 0 || (d.clicks === 0 && d.added_to_cart === 0), nullTooltip: 'Нет кликов — нельзя оценить интерес к товару после перехода.', statusTexts: { good: 'Показывает, как много людей добавили товар в корзину после клика.', warn: 'Показывает, как много людей добавили товар в корзину после клика. Если низко: возможно цена/наличие/размеры не устраивают.', bad: 'Показывает, как много людей добавили товар в корзину после клика. Если низко: возможно цена/наличие/размеры не устраивают.', }, unit: '%', },
+          orderedItems: { formula: 'Сумма заказанных товаров за период.', canCalculate: d => true, nullTooltip: '', statusTexts: { good: 'Достаточное количество заказов для анализа.', warn: 'Мало заказов для уверенных выводов.', bad: 'Мало статистики — не делайте жёстких выводов, увеличьте охват/время теста.', }, isSimple: true, },
+          cr: { formula: 'CR = Заказы / Клики × 100%', canCalculate: d => d.clicks > 0 || (d.clicks === 0 && d.orderedItems === 0), nullTooltip: 'Нет кликов — CR не рассчитывается.', statusTexts: { good: 'Карточка хорошо конвертирует в заказ.', warn: 'Конверсия средняя.', bad: 'Низкая конверсия в заказ — карточка не убеждает (цена, отзывы, фото, наличие размеров).', }, unit: '%', },
+          spend: { formula: 'Затраты = сумма рекламных расходов.', canCalculate: d => true, nullTooltip: '', statusTexts: { neutral: 'Сколько потрачено на рекламу за выбранный период. Это та сумма, которую мы сожгли на показы и клики.' }, unit: '₽', isSimple: true, },
+          revenue: { formula: 'Сумма выручки от заказов за период.', canCalculate: d => true, nullTooltip: '', statusTexts: { neutral: 'Общая выручка от заказов, ассоциированных с рекламой.' }, unit: '₽', isSimple: true, },
+          avg_check: { formula: 'Ср. чек = Выручка / Заказы', canCalculate: d => d.orderedItems > 0 || (d.orderedItems === 0 && d.revenue === 0), nullTooltip: 'Нет заказов — средний чек не рассчитывается.', statusTexts: { neutral: 'Средняя сумма одного заказа по этому товару.' }, unit: '₽', },
+          cpa: { formula: 'CPA = Затраты / Заказы', canCalculate: d => d.orderedItems > 0 || (d.orderedItems === 0 && d.spend === 0), nullTooltip: 'Нет заказов из рекламы или реклама не откручивалась — CPA не рассчитывается.', statusTexts: { good: 'Стоимость одного заказа низкая.', warn: 'Стоимость заказа на грани нормы.', bad: 'Заказ выходит слишком дорогим.', neutral: 'Нет заказов из рекламы или реклама не откручивалась — CPA не рассчитывается.', }, unit: '₽', },
+          roas: { formula: 'ROAS = Выручка / Затраты', canCalculate: d => d.spend > 0 || (d.spend === 0 && d.revenue === 0), nullTooltip: 'Реклама не откручивалась / расхода не было — ROAS не рассчитывается.', statusTexts: { good: 'Окупаемость рекламы в норме.', warn: 'Окупаемость на грани, контролируйте ставки.', bad: 'Реклама не отбивает затраты.', neutral: 'Реклама не откручивалась / расхода не было — ROAS не рассчитывается.', }, },
+          drr: { formula: 'ДРР = Затраты / Выручка × 100%', canCalculate: d => d.revenue > 0 || (d.revenue === 0 && d.spend === 0), nullTooltip: 'Нет продаж из рекламы или реклама не откручивалась — ДРР не рассчитывается.', statusTexts: { good: 'Доля рекламных расходов низкая — реклама прибыльна.', warn: 'ДРР допустима, но требует оптимизации.', bad: 'ДРР слишком высокая — реклама съедает маржу.', neutral: 'Нет продаж из рекламы или реклама не откручивалась — ДРР не рассчитывается.', }, unit: '%', },
+      };
+
+      const getStatusForMetric = (metricName, value, config) => {
+          if (value === null || !isFinite(value)) return 'neutral';
+          switch (metricName) {
+              case 'impressions': if (value >= 5000) return 'good'; if (value >= 2000) return 'warn'; return 'bad';
+              case 'clicks': if (value >= 150) return 'good'; if (value >= 50) return 'warn'; return 'bad';
+              case 'ctr': if (value >= 0.025) return 'good'; if (value >= 0.015) return 'warn'; return 'bad';
+              case 'cpc': if (value < 10) return 'good'; if (value <= 15) return 'warn'; return 'bad';
+              case 'cr': if (value >= 0.05) return 'good'; if (value >= 0.02) return 'warn'; return 'bad';
+              case 'cart_rate': if (value >= 0.10) return 'good'; if (value >= 0.05) return 'warn'; return 'bad';
+              case 'orderedItems': if (value >= 10) return 'good'; if (value >= 3) return 'warn'; return 'bad';
+              case 'cpa': if (value < 200) return 'good'; if (value <= 400) return 'warn'; return 'bad';
+              case 'roas': if (value >= 8) return 'good'; if (value >= 4) return 'warn'; return 'bad';
+              case 'drr':
+                  const margin = config.margin_pct;
+                  if (margin == null || margin <= 0) { if (value < 0.10) return 'good'; if (value <= 0.25) return 'warn'; return 'bad'; }
+                  const margin_fraction = margin / 100;
+                  const green_threshold_fraction = 0.7 * margin_fraction;
+                  if (value <= green_threshold_fraction) return 'good'; if (value <= margin_fraction) return 'warn'; return 'bad';
+              default: return 'neutral';
+          }
+      };
+
+      const getTooltip = (metricKey, status, isCalculable) => {
+          const config = metricConfig[metricKey];
+          if (!config) return '';
+          if (!isCalculable) return `${config.nullTooltip}\nФормула: ${config.formula}`;
+          const statusText = config.statusTexts[status] || '';
+          if (config.isSimple) return `${statusText}\n${config.formula}`;
+          return `${statusText}\nФормула: ${config.formula}`;
+      };
+
+      const calculateMetricsSet = (aggregatedData, config) => {
+          const values = {
+              ...aggregatedData,
+              ctr: safeDivide(aggregatedData.clicks, aggregatedData.impressions),
+              cpc: safeDivide(aggregatedData.spend, aggregatedData.clicks),
+              cpm: aggregatedData.impressions > 0 ? safeDivide(aggregatedData.spend, aggregatedData.impressions / 1000) : safeDivide(aggregatedData.spend, 0),
+              cr: safeDivide(aggregatedData.orderedItems, aggregatedData.clicks),
+              avg_check: safeDivide(aggregatedData.revenue, aggregatedData.orderedItems),
+              cpa: safeDivide(aggregatedData.spend, aggregatedData.orderedItems),
+              roas: safeDivide(aggregatedData.revenue, aggregatedData.spend),
+              drr: safeDivide(aggregatedData.spend, aggregatedData.revenue),
+              cart_rate: safeDivide(aggregatedData.added_to_cart, aggregatedData.clicks),
+          };
+
+          const metrics = Object.keys(metricConfig).reduce((acc, key) => {
+              const configEntry = metricConfig[key];
+              const value = values[key];
+              const isCalculable = value !== null;
+              let status = 'neutral';
+              if (isCalculable && value !== null && isFinite(value)) { status = getStatusForMetric(key, value, config); }
+              if (aggregatedData.impressions === 0 && aggregatedData.spend === 0 && ['cpa', 'roas', 'drr'].includes(key)) { status = 'neutral'; }
+              if (key === 'cpm' || key === 'avg_check' || key === 'spend' || key === 'revenue') { status = 'neutral'; }
+              const tooltip = getTooltip(key, status, isCalculable);
+              let displayValue;
+              if (!isCalculable || value === null || !isFinite(value)) { displayValue = '—'; } 
+              else {
+                  switch(configEntry.unit) {
+                      case '%': displayValue = `${(value * 100).toFixed(1)}%`; break;
+                      case '₽': displayValue = `${value.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ₽`; break;
+                      default: displayValue = value.toLocaleString('ru-RU');
+                  }
+              }
+              if (key === 'spend' || key === 'revenue' || key === 'avg_check' || key === 'cpa' || key === 'cpc' || key === 'cpm') { displayValue = `${(value ?? 0).toLocaleString('ru-RU', {maximumFractionDigits: 1})} ₽`; }
+              if (key === 'roas') { displayValue = (value ?? 0).toLocaleString('ru-RU', {maximumFractionDigits: 2}); }
+              if (key === 'cart_rate') {
+                   const absValue = aggregatedData.added_to_cart.toLocaleString('ru-RU');
+                   const pctValue = (!isCalculable || value === null) ? '—' : `${(value * 100).toFixed(1)}%`;
+                   displayValue = `${absValue} (${pctValue})`;
+              }
+              acc[key] = { value, status, tooltip, displayValue };
+              return acc;
+          }, {});
+          return { ...aggregatedData, metrics };
+      };
+
+      const getRecommendationTooltip = (status, metricsSet, aggregates) => {
+        const { metrics } = metricsSet;
+        const { impressions, revenue, spend, orderedItems } = aggregates;
+        if (impressions === 0) {
+          const rows = [ 'Реклама не крутится: нет показов.', 'Проверьте дневной бюджет, ставку CPM и статус кампании (не в паузе ли?).' ];
+          if (revenue > 0) { rows.push('Продажи в таблице пришли не из рекламы, а органически.'); }
+          return rows.join('\n');
+        }
+        if (status === 'bad') {
+          const rows = [ 'Расход есть, продаж нет / реклама не отбивается.', 'Действие: Остановить этот SKU в рекламе.', 'Перед перезапуском доработайте карточку: фото, отзывы, цену, наличие размеров, упаковку оффера.' ];
+          if (spend > 0 && orderedItems === 0) { rows[0] = 'Деньги тратятся, заказов ноль — это слив.'; }
+          return rows.join('\n');
+        }
+        if (status === 'good') {
+          return [ 'Реклама окупается. Карточка продаёт стабильно.', 'Действие: Увеличьте бюджет / CPM на 10–20%, но контролируйте ROAS и ДРР.', 'Следите, чтобы CPA не рос и ACoS не выходил за маржу.' ].join('\n');
+        }
+        if (status === 'warn') {
+          const tips = [];
+          if (metrics.ctr.status === 'warn' || metrics.ctr.status === 'bad') { tips.push('Низкая кликабельность. Проверьте 1-е фото и заголовок (цена/УТП).'); }
+          if (metrics.cpc.status === 'warn' || metrics.cpc.status === 'bad') { tips.push('Клик дорогой. Попробуйте снизить CPM / вынести товар в отдельную кампанию.'); }
+          if (metrics.cr.status === 'warn' || metrics.cr.status === 'bad') { tips.push('Конверсия средняя. Доработайте карточку: фото в рост, таблица размеров, отзывы, наличие размеров.'); }
+          if (metrics.cpa.status === 'warn' || metrics.cpa.status === 'bad') { tips.push('Стоимость заказа высокая. Снижайте ставку или усиливайте карточку, чтобы покупать быстрее.'); }
+          if (metrics.roas.status === 'warn' || metrics.roas.status === 'bad') { tips.push('Окупаемость на грани. Снижайте CPC или поднимайте средний чек (комплекты, аксессуары).'); }
+          if (metrics.drr.status === 'warn' || metrics.drr.status === 'bad') { tips.push('ДРР близко к марже. Не масштабируйте пока не улучшите карточку.'); }
+          if (tips.length === 0) { tips.push('Есть зоны роста. Проверьте ставку / креатив / карточку.'); }
+          tips.unshift('Нужна оптимизация: есть метрики в жёлтой или красной зоне.');
+          return tips.join('\n');
+        }
+        return 'Статус не определен. Проверьте данные.';
+      };
+
+      const getBannerAndStatus = (aggregatedData, metricsSet) => {
+          const { spend, impressions, orderedItems } = aggregatedData;
+          const { metrics } = metricsSet;
+          let overallStatus = 'neutral';
+          const financialMetrics = { cpa: metrics.cpa.status, roas: metrics.roas.status, drr: metrics.drr.status };
+          const performanceMetrics = { ctr: metrics.ctr.status, cr: metrics.cr.status };
+          const allKeyStatuses = Object.values({ ...financialMetrics, ...performanceMetrics });
+          if (spend > 0 && orderedItems === 0) { overallStatus = 'bad'; } 
+          else if (allKeyStatuses.includes('bad')) { overallStatus = 'bad'; } 
+          else if (allKeyStatuses.includes('warn')) { overallStatus = 'warn'; } 
+          else if (financialMetrics.cpa === 'good' && financialMetrics.roas === 'good' && financialMetrics.drr === 'good' && performanceMetrics.cr === 'good') { overallStatus = 'good'; }
+          let shortText;
+          if (impressions === 0) { shortText = 'Реклама не откручивается'; overallStatus = 'warn';  } 
+          else {
+              switch(overallStatus) {
+                  case 'good': shortText = 'Масштабировать'; break;
+                  case 'warn': shortText = 'Требует внимания'; break;
+                  case 'bad': shortText = 'Неэффективно'; break;
+                  default: shortText = 'Проанализировать'; break;
+              }
+          }
+          const tooltip = getRecommendationTooltip(overallStatus, metricsSet, aggregatedData);
+          return { banner: { status: overallStatus, shortText, tooltip, } };
+      };
+
+      // --- Inlined icons.js ---
+      const RefreshIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.181 9.995l-3.182-3.182m0 0a8.25 8.25 0 0111.664 0l3.18 3.183" /> </svg> );
+      const ResetIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" /> </svg> );
+      const LoadingIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" {...props}> <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle> <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg> );
+      const LogoutIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /> </svg> );
+      const InfoIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" /> </svg> );
+      const CheckCircleIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /> </svg> );
+      const ExclamationTriangleIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /> </svg> );
+      const XCircleIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /> </svg> );
+      const ChevronDownIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /> </svg> );
+      const ArrowUpIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5" /> </svg> );
+      const ArrowDownIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /> </svg> );
+      
+      // --- Inlined hooks/useAnalytics.js ---
+      const aggregateRows = (rows) => {
+          return rows.reduce((acc, item) => {
+              acc.spend += item.spend;
+              acc.impressions += item.shows;
+              acc.clicks += item.clicks;
+              acc.orderedItems += item.orderedItems;
+              acc.revenue += item.revenue;
+              acc.added_to_cart += item.added_to_cart;
+              return acc;
+          }, { spend: 0, impressions: 0, clicks: 0, orderedItems: 0, revenue: 0, added_to_cart: 0 });
+      };
+
+      const useAnalytics = (allData, filters, config) => {
+          return useMemo(() => {
+              if (!allData) return null;
+              const dateFrom = new Date(filters.dateFrom);
+              const dateTo = new Date(filters.dateTo);
+              const endDate = new Date(dateTo);
+              endDate.setHours(23, 59, 59, 999);
+              if (dateFrom > endDate) return [];
+              const filteredData = allData.filter(item => {
+                  const itemDate = new Date(item.date);
+                  const isDateInRange = !isNaN(itemDate.getTime()) && itemDate >= dateFrom && itemDate <= endDate;
+                  const isCampaignIdMatch = filters.campaignId === 'all' || item.campaignId === filters.campaignId;
+                  const isNmIdMatch = filters.nmId === 'all' || item.nmId === filters.nmId;
+                  const isAppTypeMatch = filters.appType === 'all' || item.trafficSource === filters.appType;
+                  return isDateInRange && isCampaignIdMatch && isNmIdMatch && isAppTypeMatch;
+              });
+              if (filteredData.length === 0) return [];
+              const groupedBySku = {};
+              for (const item of filteredData) {
+                  if (!item.nmId) continue;
+                  if (!groupedBySku[item.nmId]) { groupedBySku[item.nmId] = []; }
+                  groupedBySku[item.nmId].push(item);
+              }
+              const analyzedResults = [];
+              for (const nmId in groupedBySku) {
+                  const skuRows = groupedBySku[nmId];
+                  const groupedByDay = {};
+                  for (const item of skuRows) {
+                      const day = item.date.split('T')[0];
+                      if (!groupedByDay[day]) { groupedByDay[day] = []; }
+                      groupedByDay[day].push(item);
+                  }
+                  const daily = Object.entries(groupedByDay).map(([date, rows]) => {
+                      const dailyAggregates = aggregateRows(rows);
+                      const metricsSet = calculateMetricsSet(dailyAggregates, config);
+                      return { date, ...metricsSet };
+                  }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                  const periodAggregates = aggregateRows(skuRows);
+                  const periodTotals = calculateMetricsSet(periodAggregates, config);
+                  const { banner } = getBannerAndStatus(periodAggregates, periodTotals);
+                  analyzedResults.push({
+                      nmId,
+                      productName: skuRows[0]?.productName || `Название товара (заглушка)`,
+                      productImageUrl: null,
+                      banner,
+                      periodTotals,
+                      daily,
+                  });
+              }
+              return analyzedResults.sort((a, b) => b.periodTotals.revenue - a.periodTotals.revenue);
+          }, [allData, filters, config]);
+      };
+
+      // --- Inlined components/Tooltip.js ---
+      const Tooltip = ({ children, content }) => {
+        const [visible, setVisible] = useState(false);
+        const [position, setPosition] = useState({ top: 0, left: 0 });
+        const triggerRef = useRef(null);
+        const tooltipRef = useRef(null);
+        const showTooltip = useCallback(() => { if (!triggerRef.current || !content) return; setVisible(true); }, [content]);
+        const hideTooltip = useCallback(() => { setVisible(false); }, []);
+        useEffect(() => {
+          if (visible && tooltipRef.current && triggerRef.current) {
+            const triggerRect = triggerRef.current.getBoundingClientRect();
+            const tooltipRect = tooltipRef.current.getBoundingClientRect();
+            let top = triggerRect.top - tooltipRect.height - 8;
+            let left = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
+            if (top < 8) { top = triggerRect.bottom + 8; }
+            if (left < 8) { left = 8; } 
+            else if (left + tooltipRect.width > window.innerWidth - 8) { left = window.innerWidth - tooltipRect.width - 8; }
+            setPosition({ top, left });
+          }
+        }, [visible]);
+        return (
+          <>
+            <div ref={triggerRef} onMouseEnter={showTooltip} onMouseLeave={hideTooltip} onFocus={showTooltip} onBlur={hideTooltip} style={{ display: 'inline-block' }}>{children}</div>
+            {visible && content && createPortal(
+              <div ref={tooltipRef} className="fixed z-50 p-3 text-xs leading-relaxed text-slate-50 bg-slate-800 rounded-lg shadow-lg whitespace-pre-wrap max-w-sm transition-opacity duration-200" style={{ ...position, opacity: tooltipRef.current && position.top !== 0 ? 1 : 0, }} role="tooltip">{content}</div>,
+              document.body
+            )}
+          </>
+        );
+      };
+
+      // --- Inlined various components ---
+      const KpiCard = () => null;
+      const ChartPanel = ({ title, children }) => (
+        <div className="bg-white rounded-xl shadow-sm p-4 md:p-6 w-full max-w-3xl flex flex-col h-full">
+          <h3 className="font-bold text-slate-800 text-lg mb-4 flex-shrink-0">{title}</h3>
+          <div className="flex-grow min-h-0">{children}</div>
+        </div>
+      );
+      const MetricDisplay = () => null;
+      const Settings = () => null;
+      
+      const ControlGroup = ({ label, children }) => (
+          <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</label>
+              {children}
+          </div>
+      );
+
+      const TabButton = ({ tabId, activeTab, onClick, children }) => {
+        const isActive = tabId === activeTab;
+        return ( <button onClick={() => onClick(tabId)} className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors duration-200 ${ isActive ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700' }`}>{children}</button> );
+      };
+
+      const Header = ({ filters, setFilters, onReload, loading, campaignIdOptions, nmIdOptions, appTypeOptions, activeTab, setActiveTab, onLogout, analyticsConfig, setAnalyticsConfig }) => {
+        const handleInputChange = (e) => { const { id, name, value, type } = e.target; const key = name || id; const val = type === 'checkbox' ? e.target.checked : value; setFilters(prev => ({ ...prev, [key]: val })); };
+        const handleConfigChange = (e) => { const { id, value } = e.target; const numValue = parseFloat(value); if (!isNaN(numValue)) { setAnalyticsConfig(prev => ({...prev, [id]: numValue})); } };
+        const handleReset = () => { const today = new Date(); const fourDaysAgo = new Date(); fourDaysAgo.setDate(today.getDate() - 3); setFilters(prev => ({ ...prev, campaignId: 'all', nmId: 'all', appType: 'all', dateFrom: fourDaysAgo.toISOString().split('T')[0], dateTo: today.toISOString().split('T')[0], compare: false, })); };
+        const inputClass = "bg-slate-50 border-2 border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2 transition duration-150 ease-in-out hover:border-slate-300";
+        return (
+          <>
+            <header className="bg-white border-b border-slate-200 shadow-sm flex-shrink-0 z-10">
+              <div className="px-3 pt-2 border-b border-slate-200">
+                  <div className="flex items-center">
+                       <TabButton tabId="ads" activeTab={activeTab} onClick={setActiveTab}>Реклама</TabButton>
+                       <TabButton tabId="orders" activeTab={activeTab} onClick={setActiveTab}>Заказы</TabButton>
+                  </div>
+              </div>
+              <div className="p-3">
+                  <div className="flex flex-wrap items-end gap-3 w-full">
+                      <ControlGroup label="ID кампании"><select id="campaignId" className={inputClass} value={filters.campaignId} onChange={handleInputChange} disabled={activeTab !== 'ads'}><option value="all">Все кампании</option>{campaignIdOptions.map(id => <option key={id} value={id}>{id}</option>)}</select></ControlGroup>
+                      <ControlGroup label="Артикул WB (nmId)"><select id="nmId" className={inputClass} value={filters.nmId} onChange={handleInputChange} disabled={activeTab !== 'ads'}><option value="all">Все артикулы</option>{nmIdOptions.map(id => <option key={id} value={id}>{id}</option>)}</select></ControlGroup>
+                      <ControlGroup label="Источник трафика"><select id="appType" className={inputClass} value={filters.appType} onChange={handleInputChange} disabled={activeTab !== 'ads'}><option value="all">Все источники</option>{appTypeOptions.map(type => <option key={type} value={type}>{type}</option>)}</select></ControlGroup>
+                      <ControlGroup label="Период"><div className="flex items-center"><input id="dateFrom" type="date" className={`${inputClass} rounded-r-none`} value={filters.dateFrom} onChange={handleInputChange} /><input id="dateTo" type="date" className={`${inputClass} rounded-l-none border-l-0`} value={filters.dateTo} onChange={handleInputChange} /></div></ControlGroup>
+                      <ControlGroup label="Маржа, %"><div className="relative"><input id="margin_pct" type="number" className={`${inputClass} pr-7 w-28`} value={analyticsConfig.margin_pct} onChange={handleConfigChange} step="1" min="0" max="100" /><span className="absolute inset-y-0 right-3 flex items-center text-slate-500 text-sm">%</span></div></ControlGroup>
+                      <div className="flex-grow"></div>
+                      <div className="flex items-end gap-2">
+                          <button onClick={handleReset} disabled={loading} title="Сбросить фильтры" className="flex items-center justify-center gap-2 h-10 px-4 text-sm font-semibold text-slate-700 bg-slate-200 rounded-lg hover:bg-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:opacity-50 transition-all"><ResetIcon className="w-4 h-4" /></button>
+                          <button onClick={onReload} disabled={loading} title="Обновить данные" className="flex items-center justify-center gap-2 h-10 px-4 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all"><RefreshIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+                          <button onClick={onLogout} title="Выйти" className="flex items-center justify-center h-10 w-10 text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:opacity-50 transition-all"><LogoutIcon className="w-5 h-5" /></button>
+                      </div>
+                  </div>
+              </div>
+            </header>
+          </>
+        );
+      };
+
+      const statusClasses = { good: 'bg-green-500', warn: 'bg-yellow-500', bad: 'bg-red-500', neutral: 'bg-slate-400', info: 'bg-blue-500', };
+      const statusBadgeStyles = { good: { Icon: CheckCircleIcon, bgColor: 'bg-green-100', textColor: 'text-green-800' }, warn: { Icon: ExclamationTriangleIcon, bgColor: 'bg-yellow-100', textColor: 'text-yellow-800' }, bad: { Icon: XCircleIcon, bgColor: 'bg-red-100', textColor: 'text-red-800' }, neutral: { Icon: CheckCircleIcon, bgColor: 'bg-slate-100', textColor: 'text-slate-800' }, info: { Icon: CheckCircleIcon, bgColor: 'bg-blue-100', textColor: 'text-blue-800' }, };
+      const betterIfHigher = new Set(['impressions', 'clicks', 'ctr', 'cart_rate', 'cr', 'orderedItems', 'avg_check', 'revenue', 'roas']);
+      const TrendIndicator = ({ current, previous, metricKey }) => {
+          const currentValue = current.value; const previousValue = previous.value;
+          const isCurrentValid = typeof currentValue === 'number' && isFinite(currentValue); const isPreviousValid = typeof previousValue === 'number' && isFinite(previousValue);
+          if (!isCurrentValid || !isPreviousValid || currentValue === previousValue) { return null; }
+          const isUp = currentValue > previousValue; const isGood = betterIfHigher.has(metricKey) ? isUp : !isUp;
+          const colorClass = isGood ? 'text-green-600' : 'text-red-600';
+          if (isUp) { return <ArrowUpIcon className={`w-3 h-3 ml-1 flex-shrink-0 ${colorClass}`} aria-label="Рост" />; } 
+          else { return <ArrowDownIcon className={`w-3 h-3 ml-1 flex-shrink-0 ${colorClass}`} aria-label="Падение" />; }
+      };
+      const columnsConfig = [ { key: 'product', title: 'Товар', width: '250px' }, { key: 'status', title: 'Статус / Рекомендация', width: '210px' }, { key: 'impressions', title: 'Показы', width: '90px' }, { key: 'clicks', title: 'Клики', width: '90px' }, { key: 'ctr', title: 'CTR', width: '80px' }, { key: 'cpc', title: 'CPC', width: '90px' }, { key: 'cpm', title: 'CPM', width: '90px' }, { key: 'cart_rate', title: 'Корзина', width: '120px' }, { key: 'cr', title: 'CR', width: '80px' }, { key: 'orderedItems', title: 'Заказы', width: '90px' }, { key: 'avg_check', title: 'Ср. чек', width: '100px' }, { key: 'revenue', title: 'Выручка', width: '110px' }, { key: 'spend', title: 'Затраты', width: '100px' }, { key: 'cpa', title: 'CPA', width: '90px' }, { key: 'roas', title: 'ROAS', width: '90px' }, { key: 'drr', title: 'ДРР', width: '80px' }, ];
+      const metricKeys = columnsConfig.map(c => c.key).filter(key => key !== 'product' && key !== 'status');
+      const MetricCell = ({ metric, previousMetric, metricKey }) => ( <Tooltip content={metric.tooltip}> <div className="flex items-center gap-2 whitespace-nowrap"> <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusClasses[metric.status]}`}></span> <span className="font-medium text-slate-700">{metric.displayValue}</span> {previousMetric && <TrendIndicator current={metric} previous={previousMetric} metricKey={metricKey} />} </div> </Tooltip> );
+      const StatusBadge = ({ banner }) => { const { Icon, bgColor, textColor } = statusBadgeStyles[banner.status] || statusBadgeStyles.neutral; return ( <Tooltip content={banner.tooltip}> <div className={`inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full ${bgColor} ${textColor}`}> <Icon className="w-4 h-4 flex-shrink-0" /> <span className="text-sm font-semibold">{banner.shortText}</span> </div> </Tooltip> ); };
+      const SkuTableRow = ({ sku }) => {
+          const [isOpen, setIsOpen] = useState(false); const { periodTotals: pt } = sku;
+          return (
+              <>
+                  <tr onClick={() => setIsOpen(!isOpen)} className="bg-white hover:bg-slate-50 cursor-pointer transition-colors group">
+                      <td className="sticky left-0 bg-white group-hover:bg-slate-50 px-3 py-2.5 z-10 border-b border-slate-200"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-md bg-slate-200 flex-shrink-0"></div><div><p className="font-bold text-slate-800 text-sm">Артикул: {sku.nmId}</p><p className="text-xs text-slate-500 truncate" style={{maxWidth: '150px'}}>{sku.productName}</p></div></div></td>
+                      <td className="px-3 py-2.5 border-b border-slate-200"><StatusBadge banner={sku.banner} /></td>
+                      {metricKeys.map(key => ( <td key={key} className="px-3 py-2.5 text-sm border-b border-slate-200"><MetricCell metric={pt.metrics[key]} previousMetric={null} metricKey={key} /></td> ))}
+                      <td className="px-3 py-2.5 text-center border-b border-slate-200"><ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} /></td>
+                  </tr>
+                  {isOpen && sku.daily.map((day, index) => {
+                       const previousDay = index > 0 ? sku.daily[index - 1] : null;
+                       return (
+                           <tr key={day.date} className="bg-slate-50 hover:bg-slate-100 transition-colors group">
+                              <td className="sticky left-0 bg-slate-50 group-hover:bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-600 whitespace-nowrap z-10 border-b border-slate-200">{new Date(day.date).toLocaleDateString('ru-RU')}</td>
+                              <td className="px-3 py-2.5 border-b border-slate-200">—</td>
+                              {metricKeys.map(key => { const currentMetric = day.metrics[key]; const previousMetric = previousDay ? previousDay.metrics[key] : null; return ( <td key={key} className="px-3 py-2.5 text-sm border-b border-slate-200"><MetricCell metric={currentMetric} previousMetric={previousMetric} metricKey={key} /></td> ); })}
+                              <td className="px-3 py-2.5 border-b border-slate-200"></td>
+                          </tr>
+                       );
+                  })}
+              </>
+          );
+      };
+      const SkuCard = ({ data }) => {
+          return (
+              <div className="h-full overflow-auto bg-white rounded-xl border border-slate-200 shadow-sm">
+                  <table className="min-w-full border-collapse">
+                      <thead className="bg-slate-50/75 sticky top-0 z-20">
+                          <tr>
+                              {columnsConfig.map((col, index) => ( <th key={col.key} scope="col" className={`px-3 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap border-b border-slate-200 ${index === 0 ? 'sticky left-0 z-10 bg-slate-50/75' : ''}`} style={{width: col.width, minWidth: col.width}}>{col.title}</th> ))}
+                              <th scope="col" className="relative px-3 py-3 w-12 border-b border-slate-200"><span className="sr-only">Раскрыть</span></th>
+                          </tr>
+                      </thead>
+                      <tbody>{data.map(sku => ( <SkuTableRow key={sku.nmId} sku={sku} /> ))}</tbody>
+                  </table>
+              </div>
+          );
+      };
+      const AdsDashboard = ({ data }) => ( <div className="w-full h-full"><SkuCard data={data} /></div> );
+      const OrdersDashboard = () => ( <div className="flex items-center justify-center h-full"><ChartPanel title="Аналитика по Заказам"><div className="flex flex-col items-center justify-center h-full text-center text-slate-500"><p className="text-lg font-semibold">Раздел в разработке</p><p className="mt-2 text-sm max-w-md">Здесь будет располагаться дашборд для анализа данных по заказам. Чтобы его активировать, укажите ссылку на соответствующую Google Таблицу в настройках (⚙️).</p></div></ChartPanel></div> );
+      
+      const Login = ({ onLoginSuccess }) => {
+          const CORRECT_PIN = '164363'; const ENCODED_ADS_URL = 'aHR0cHM6Ly9kb2NzLmdvb2dsZS5jb20vc3ByZWFkc2hlZXRzL2QvMUg2V3hLV200RWEzSVNoaFNLR3U2M09wWnV5Tk1aLVZTS21xVWp3em9GTFEvZWRpdCNnaWQ9MTg5NDI0MjcwOA=='; const URL_STORAGE_KEY = 'wb-ads-dashboard-urls';
+          const [accessCode, setAccessCode] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+          const handleCodeChange = (e) => { const value = e.target.value.replace(/\D/g, ''); if (value.length <= 6) { setAccessCode(value); } };
+          const handleSubmit = (e) => {
+              e.preventDefault(); setError('');
+              if (accessCode !== CORRECT_PIN) { setError('Неверный PIN-код. Попробуйте еще раз.'); setAccessCode(''); return; }
+              setLoading(true);
+              setTimeout(() => {
+                  try {
+                      const sheetUrl = atob(ENCODED_ADS_URL); const urls = { ads: sheetUrl, orders: '', };
+                      sessionStorage.setItem(URL_STORAGE_KEY, JSON.stringify(urls)); sessionStorage.setItem('isAuthenticated', 'true'); onLoginSuccess();
+                  } catch (e) { setError('Произошла ошибка при сохранении сессии.'); setLoading(false); }
+              }, 300);
+          };
+          const inputClass = "bg-slate-100 border-2 border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-3 transition duration-150 ease-in-out hover:border-slate-300 text-center tracking-[1em]";
+          return (
+              <div className="flex h-full w-full items-center justify-center bg-slate-100 font-sans">
+                  <div className="w-full max-w-sm p-8 space-y-6 bg-white rounded-xl shadow-lg">
+                      <div><h2 className="text-center text-3xl font-bold tracking-tight text-slate-800">Вход в дашборд</h2><p className="mt-2 text-center text-sm text-slate-600">Для доступа введите 6-значный PIN-код.</p></div>
+                      <form className="space-y-6" onSubmit={handleSubmit}>
+                          <div><label htmlFor="access-code" className="sr-only">PIN-код</label><input id="access-code" name="access-code" type="text" inputMode="numeric" pattern="\d{6}" autoComplete="one-time-code" required className={inputClass} placeholder="● ● ● ● ● ●" value={accessCode} onChange={handleCodeChange} maxLength={6} autoFocus /></div>
+                          {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+                          <div><button type="submit" disabled={loading || accessCode.length < 6} className="flex w-full justify-center items-center h-12 px-4 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all">{loading ? <LoadingIcon className="w-5 h-5 animate-spin" /> : 'Войти'}</button></div>
+                      </form>
+                  </div>
+              </div>
+          );
+      };
+      
+      const App = () => {
+        const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('isAuthenticated') === 'true');
+        const [activeTab, setActiveTab] = useState('ads');
+        const [allData, setAllData] = useState(null);
+        const [loading, setLoading] = useState(false);
+        const [status, setStatus] = useState(null);
+        const [campaignIdOptions, setCampaignIdOptions] = useState([]);
+        const [nmIdOptions, setNmIdOptions] = useState([]);
+        const [appTypeOptions, setAppTypeOptions] = useState([]);
+        const [analyticsConfig, setAnalyticsConfig] = useState(() => { try { const savedConfig = localStorage.getItem('wbAdsDashboardConfig'); if (savedConfig) return JSON.parse(savedConfig); } catch (e) { console.error(e) } return { margin_pct: 25, min_clicks_for_cr: 30 }; });
+        const [filters, setFilters] = useState(() => { try { const savedFilters = localStorage.getItem('wbAdsDashboardFilters'); const savedTab = localStorage.getItem('wbAdsDashboardActiveTab'); if (savedFilters) { const parsed = JSON.parse(savedFilters); if(savedTab) setActiveTab(savedTab); delete parsed.dataSources; return parsed; } } catch (error) { console.error("Failed to parse filters from localStorage", error); } const today = new Date(); const fourDaysAgo = new Date(); fourDaysAgo.setDate(today.getDate() - 3); return { campaignId: 'all', nmId: 'all', appType: 'all', dateFrom: fourDaysAgo.toISOString().split('T')[0], dateTo: today.toISOString().split('T')[0], compare: false, } });
+        useEffect(() => { localStorage.setItem('wbAdsDashboardFilters', JSON.stringify(filters)); localStorage.setItem('wbAdsDashboardActiveTab', activeTab); localStorage.setItem('wbAdsDashboardConfig', JSON.stringify(analyticsConfig)); }, [filters, activeTab, analyticsConfig]);
+        const fetchData = useCallback(async () => {
+          setLoading(true); setStatus(null);
+          try {
+              const csvText = await fetchDataFromApi(activeTab);
+              if (!csvText) { setAllData(null); setLoading(false); return; }
+              let parsedData = [];
+              if (activeTab === 'ads') { parsedData = parseAdsCSV(csvText); setCampaignIdOptions([...new Set(parsedData.map(item => item.campaignId).filter(Boolean))]); setNmIdOptions([...new Set(parsedData.map(item => item.nmId).filter(Boolean))]); setAppTypeOptions([...new Set(parsedData.map(item => item.trafficSource).filter(Boolean))]); }
+              setAllData(parsedData); setStatus({ message: 'Данные успешно загружены!', type: 'success' });
+          } catch (error) { if (error instanceof Error) { setStatus({ message: error.message, type: 'error' }); } else { setStatus({ message: 'Произошла неизвестная ошибка', type: 'error' }); } setAllData(null); } 
+          finally { setLoading(false); }
+        }, [activeTab]);
+        useEffect(() => { const handler = setTimeout(() => { if(isAuthenticated) fetchData(); }, 500); return () => clearTimeout(handler); }, [fetchData, isAuthenticated]);
+        const analyzedData = useAnalytics(allData, filters, analyticsConfig);
+        useEffect(() => { if (status) { const timer = setTimeout(() => setStatus(null), 5000); return () => clearTimeout(timer); } }, [status]);
+        const handleLoginSuccess = () => { setIsAuthenticated(true); };
+        const handleLogout = () => { sessionStorage.removeItem('isAuthenticated'); sessionStorage.removeItem('wb-ads-dashboard-urls'); setIsAuthenticated(false); setAllData(null); };
+        if (!isAuthenticated) { return <Login onLoginSuccess={handleLoginSuccess} />; }
+        const WelcomeMessage = () => ( <div className="flex h-full items-center justify-center"><div className="text-center p-8 bg-white rounded-lg shadow-md max-w-2xl"><h2 className="text-xl font-bold text-slate-700 mb-2">Добро пожаловать в WB Ads Dashboard</h2><p className="text-slate-600 mb-4">Нет данных для отображения. Проверьте выбранные фильтры или источник данных.</p><p className="text-xs text-slate-500 mt-4">Если данные не загружаются, возможно, неверно указана ссылка на Google Таблицу в файле `api.ts`.</p></div></div> );
+        const hasDataForCurrentTab = activeTab === 'ads' ? !!analyzedData && analyzedData.length > 0 : false;
+        return (
+          <div className="flex flex-col h-full bg-slate-100 font-sans text-slate-800">
+              <Header filters={filters} setFilters={setFilters} onReload={fetchData} loading={loading} campaignIdOptions={campaignIdOptions} nmIdOptions={nmIdOptions} appTypeOptions={appTypeOptions} activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} analyticsConfig={analyticsConfig} setAnalyticsConfig={setAnalyticsConfig} />
+              <main className="flex-1 p-4 md:p-6 overflow-y-auto min-h-0 relative">
+                  {status && ( <div className={`fixed top-20 right-6 p-4 rounded-lg shadow-lg text-white z-50 transition-all max-w-md ${status.type === 'error' ? 'bg-red-600' : 'bg-green-500'}`}>{status.message.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div> )}
+                  <div className="h-full w-full">
+                      {loading && ( <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-20 rounded-xl"><LoadingIcon className="w-12 h-12 animate-spin text-blue-600" /></div> )}
+                      {!hasDataForCurrentTab && !loading && <WelcomeMessage />}
+                      {activeTab === 'ads' && analyzedData && <AdsDashboard data={analyzedData} />}
+                      {activeTab === 'orders' && <OrdersDashboard />}
+                  </div>
+              </main>
+          </div>
+        );
+      };
+
+      // --- Rendering logic ---
       const rootElement = document.getElementById('root');
       if (!rootElement) {
         throw new Error("Could not find root element to mount to");
       }
-
       const root = createRoot(rootElement);
       root.render(
         <React.StrictMode>
