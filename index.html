@@ -86,6 +86,8 @@
           const headers = parseCsvLine(lines[0]).map(h => h.trim());
           
           const headerMap = {
+              photoUrl: headers.indexOf('Фото'),
+              productLink: headers.indexOf('Формула'),
               campaignId: headers.indexOf('ID кампании'),
               trafficSource: headers.indexOf('Источник трафика'),
               nmId: headers.indexOf('Артикул WB'),
@@ -136,6 +138,8 @@
               }
               
               return {
+                  photoUrl: getString(headerMap.photoUrl),
+                  productLink: getString(headerMap.productLink),
                   campaignId: getString(headerMap.campaignId),
                   trafficSource: getString(headerMap.trafficSource),
                   nmId: getString(headerMap.nmId),
@@ -414,6 +418,7 @@
       const ChevronDownIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /> </svg> );
       const ArrowUpIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5" /> </svg> );
       const ArrowDownIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" {...props}> <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /> </svg> );
+      const ExternalLinkIcon = (props) => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-4.5 0L18 6m-5.25 0h5.25v5.25" /></svg> );
       
       // --- Inlined hooks/useAnalytics.js ---
       const aggregateRows = (rows) => {
@@ -468,10 +473,13 @@
                   const periodAggregates = aggregateRows(skuRows);
                   const periodTotals = calculateMetricsSet(periodAggregates, config);
                   const { banner } = getBannerAndStatus(periodAggregates, periodTotals);
+                  const productImageUrl = skuRows.find(item => item.photoUrl)?.photoUrl || null;
+                  const productLink = skuRows.find(item => item.productLink)?.productLink || null;
                   analyzedResults.push({
                       nmId,
                       productName: skuRows[0]?.productName || `Название товара (заглушка)`,
-                      productImageUrl: null,
+                      productImageUrl,
+                      productLink,
                       banner,
                       periodTotals,
                       daily,
@@ -590,7 +598,38 @@
           return (
               <>
                   <tr onClick={() => setIsOpen(!isOpen)} className="bg-white hover:bg-slate-50 cursor-pointer transition-colors group">
-                      <td className="sticky left-0 bg-white group-hover:bg-slate-50 px-3 py-2.5 z-10 border-b border-slate-200"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-md bg-slate-200 flex-shrink-0"></div><div><p className="font-bold text-slate-800 text-sm">Артикул: {sku.nmId}</p><p className="text-xs text-slate-500 truncate" style={{maxWidth: '150px'}}>{sku.productName}</p></div></div></td>
+                      <td className="sticky left-0 bg-white group-hover:bg-slate-50 px-3 py-2.5 z-10 border-b border-slate-200">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-md bg-slate-200 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                            {sku.productImageUrl && sku.productImageUrl.startsWith('http') ? (
+                              <img
+                                src={sku.productImageUrl}
+                                alt={sku.productName || sku.nmId}
+                                className="max-w-full max-h-full object-contain"
+                                onError={(e) => { (e.currentTarget).style.display = 'none'; }}
+                              />
+                            ) : null}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-bold text-slate-800 text-sm">Артикул: {sku.nmId}</p>
+                              {sku.productLink && sku.productLink.startsWith('http') && (
+                                <a
+                                  href={sku.productLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Открыть карточку товара в базе"
+                                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLinkIcon className="w-4 h-4" />
+                                </a>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 truncate" style={{maxWidth: '150px'}}>{sku.productName}</p>
+                          </div>
+                        </div>
+                      </td>
                       <td className="px-3 py-2.5 border-b border-slate-200"><StatusBadge banner={sku.banner} /></td>
                       {metricKeys.map(key => ( <td key={key} className="px-3 py-2.5 text-sm border-b border-slate-200"><MetricCell metric={pt.metrics[key]} previousMetric={null} metricKey={key} /></td> ))}
                       <td className="px-3 py-2.5 text-center border-b border-slate-200"><ChevronDownIcon className={`w-5 h-5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} /></td>
@@ -628,7 +667,7 @@
       const OrdersDashboard = () => ( <div className="flex items-center justify-center h-full"><ChartPanel title="Аналитика по Заказам"><div className="flex flex-col items-center justify-center h-full text-center text-slate-500"><p className="text-lg font-semibold">Раздел в разработке</p><p className="mt-2 text-sm max-w-md">Здесь будет располагаться дашборд для анализа данных по заказам. Чтобы его активировать, укажите ссылку на соответствующую Google Таблицу в настройках (⚙️).</p></div></ChartPanel></div> );
       
       const Login = ({ onLoginSuccess }) => {
-          const CORRECT_PIN = '164363'; const ENCODED_ADS_URL = 'aHR0cHM6Ly9kb2NzLmdvb2dsZS5jb20vc3ByZWFkc2hlZXRzL2QvMUg2V3hLV200RWEzSVNoaFNLR3U2M09wWnV5Tk1aLVZTS21xVWp3em9GTFEvZWRpdCNnaWQ9MTg5NDI0MjcwOA=='; const URL_STORAGE_KEY = 'wb-ads-dashboard-urls';
+          const CORRECT_PIN = '164363'; const ENCODED_ADS_URL = 'aHR0cHM6Ly9kb2NzLmdvb2dsZS5jb20vc3ByZWFkc2hlZXRzL2QvMUg2V3hLV200RWEzSVNoaFNLR3U2M09wWnV5Tk1aLVZTS21xVWp3em9GTFEvZWRpdCNnaWQ9NTU3NjM4MzEw'; const URL_STORAGE_KEY = 'wb-ads-dashboard-urls';
           const [accessCode, setAccessCode] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
           const handleCodeChange = (e) => { const value = e.target.value.replace(/\D/g, ''); if (value.length <= 6) { setAccessCode(value); } };
           const handleSubmit = (e) => {
