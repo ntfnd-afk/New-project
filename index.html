@@ -18,18 +18,7 @@
     <script src="https://unpkg.com/systemjs@6.14.3/dist/s.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
 
-    <!-- 2. Карта импортов для SystemJS -->
-    <script type="systemjs-importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.2.0",
-        "react-dom": "https://esm.sh/react-dom@18.2.0",
-        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
-      }
-    }
-    </script>
-
-    <!-- 3. Конфигурация SystemJS для работы с Babel -->
+    <!-- 2. Конфигурация SystemJS для работы с Babel -->
     <script>
       (function () {
         // Сохраняем оригинальный метод загрузки модулей
@@ -37,6 +26,8 @@
 
         // Переопределяем его для обработки TS/TSX
         System.instantiate = function (url, parent) {
+          const systemInstance = this; // Захватываем правильный контекст 'this'
+
           // Если файл имеет расширение .ts или .tsx...
           if (url.endsWith('.ts') || url.endsWith('.tsx')) {
             // ...загружаем его как текст
@@ -62,29 +53,31 @@
                 (new Function(transformed.code))();
 
                 // Теперь, когда модуль зарегистрирован, вызываем оригинальный
-                // метод instantiate, который найдет и вернет наш модуль.
-                return originalInstantiate.call(this, url, parent);
+                // метод instantiate, используя захваченный 'this'.
+                return originalInstantiate.call(systemInstance, url, parent);
               });
           }
           // Для всех остальных файлов (JS из importmap) используем стандартное поведение
-          return originalInstantiate.call(this, url, parent);
+          return originalInstantiate.call(systemInstance, url, parent);
         };
       })();
     </script>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
-  }
-}
-</script>
+    
+    <!-- Этот importmap, вероятно, предоставляется платформой. Мы будем использовать его. -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://aistudiocdn.com/react@^19.2.0",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+        "react/": "https://aistudiocdn.com/react@^19.2.0/",
+        "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
+      }
+    }
+    </script>
 </head>
   <body>
     <div id="root"></div>
-    <!-- 4. Запускаем приложение -->
+    <!-- 3. Запускаем приложение -->
     <script>
       System.import('./index.tsx').catch(function(err) {
         console.error("SystemJS не смог запустить приложение:", err);
