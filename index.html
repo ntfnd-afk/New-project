@@ -14,11 +14,11 @@
       }
     </style>
     
-    <!-- 1. Load dependencies: SystemJS and Babel for transpilation -->
+    <!-- 1. Загрузка зависимостей: SystemJS и Babel -->
     <script src="https://unpkg.com/systemjs@6.14.3/dist/s.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
 
-    <!-- 2. Provide an import map for SystemJS -->
+    <!-- 2. Карта импортов для SystemJS -->
     <script type="systemjs-importmap">
     {
       "imports": {
@@ -29,27 +29,47 @@
     }
     </script>
 
-    <!-- 3. Configure SystemJS to use Babel for TS/TSX files -->
+    <!-- 3. Конфигурация SystemJS для работы с Babel -->
     <script>
-      // Use the global "Babel" object from @babel/standalone to transpile modules.
-      System.set('plugin-babel', {
-        translate: function (load) {
-          // Babel will transpile the code, using presets to understand React (JSX) and TypeScript.
-          var babelized = Babel.transform(load.source, {
-            presets: ['react', 'typescript'],
-            filename: load.address // Provides better error messages
-          });
-          return babelized.code;
-        }
-      });
+      (function () {
+        // Сохраняем оригинальный метод загрузки модулей
+        const originalInstantiate = System.instantiate;
 
-      // Tell SystemJS to use our Babel plugin for .ts and .tsx files.
-      System.config({
-        meta: {
-          '*.tsx': { loader: 'plugin-babel' },
-          '*.ts': { loader: 'plugin-babel' }
-        }
-      });
+        // Переопределяем его для обработки TS/TSX
+        System.instantiate = function (url, parent) {
+          // Если файл имеет расширение .ts или .tsx...
+          if (url.endsWith('.ts') || url.endsWith('.tsx')) {
+            // ...загружаем его как текст
+            return fetch(url)
+              .then(function (response) {
+                if (!response.ok) {
+                  throw new Error('Ошибка сети при загрузке ' + url);
+                }
+                return response.text();
+              })
+              .then(function (source) {
+                // Транспилируем код с помощью Babel
+                const transformed = Babel.transform(source, {
+                  presets: ['react', 'typescript'],
+                  filename: url, // Важно для корректных ошибок
+                  // Указываем Babel преобразовать ES-модули в формат System.register,
+                  // который понятен SystemJS.
+                  plugins: ['transform-modules-systemjs']
+                });
+                
+                // Выполняем транспилированный код.
+                // Он сам зарегистрирует модуль в SystemJS через System.register().
+                (new Function(transformed.code))();
+
+                // Теперь, когда модуль зарегистрирован, вызываем оригинальный
+                // метод instantiate, который найдет и вернет наш модуль.
+                return originalInstantiate.call(this, url, parent);
+              });
+          }
+          // Для всех остальных файлов (JS из importmap) используем стандартное поведение
+          return originalInstantiate.call(this, url, parent);
+        };
+      })();
     </script>
 <script type="importmap">
 {
@@ -64,10 +84,10 @@
 </head>
   <body>
     <div id="root"></div>
-    <!-- 4. Start the app by importing the main entry point -->
+    <!-- 4. Запускаем приложение -->
     <script>
       System.import('./index.tsx').catch(function(err) {
-        console.error("SystemJS Error:", err);
+        console.error("SystemJS не смог запустить приложение:", err);
       });
     </script>
   </body>
