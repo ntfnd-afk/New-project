@@ -27,20 +27,31 @@
     }
     </script>
 
-    <!-- 2. Загрузка Babel Standalone для транспиляции TSX/JSX в браузере -->
+    <!-- 2. Загрузка Babel Standalone для транспиляции TSX/JSX в браузere -->
     <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
 
   </head>
   <body>
     <div id="root"></div>
     
-    <!-- 3. Запуск приложения. Babel найдёт этот тег, скачает index.js, транспилирует его и выполнит как ES-модуль -->
-    <script 
-      type="text/babel" 
-      data-presets="react,typescript" 
-      data-type="module" 
-      src="./index.js"
-    ></script>
+    <!-- 3. Запуск приложения. Babel найдёт этот тег, транспилирует его и все импорты, а затем выполнит как ES-модуль -->
+    <script type="text/babel" data-presets="react,typescript" data-type="module">
+      import React from 'react';
+      import { createRoot } from 'react-dom/client';
+      import App from './App.js';
+
+      const rootElement = document.getElementById('root');
+      if (!rootElement) {
+        throw new Error("Could not find root element to mount to");
+      }
+
+      const root = createRoot(rootElement);
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      );
+    </script>
 
   </body>
 </html>
