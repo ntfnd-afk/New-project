@@ -4,24 +4,21 @@ import AdsDashboard from './components/Dashboard.js';
 import OrdersDashboard from './components/OrdersDashboard.js';
 import Login from './components/Login.js';
 import { fetchDataFromApi } from './api.js';
-import type { Filters, RawDataRow, AnalyticsConfig, SkuAnalysisResult } from './types.js';
 import { LoadingIcon } from './components/icons.js';
 import { parseAdsCSV } from './parsers.js';
 import { useAnalytics } from './hooks/useAnalytics.js';
 
-type Tab = 'ads' | 'orders';
+const App = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('isAuthenticated') === 'true');
+  const [activeTab, setActiveTab] = useState('ads');
+  const [allData, setAllData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [campaignIdOptions, setCampaignIdOptions] = useState([]);
+  const [nmIdOptions, setNmIdOptions] = useState([]);
+  const [appTypeOptions, setAppTypeOptions] = useState([]);
 
-const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => sessionStorage.getItem('isAuthenticated') === 'true');
-  const [activeTab, setActiveTab] = useState<Tab>('ads');
-  const [allData, setAllData] = useState<RawDataRow[] | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [status, setStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const [campaignIdOptions, setCampaignIdOptions] = useState<string[]>([]);
-  const [nmIdOptions, setNmIdOptions] = useState<string[]>([]);
-  const [appTypeOptions, setAppTypeOptions] = useState<string[]>([]);
-
-  const [analyticsConfig, setAnalyticsConfig] = useState<AnalyticsConfig>(() => {
+  const [analyticsConfig, setAnalyticsConfig] = useState(() => {
     try {
       const savedConfig = localStorage.getItem('wbAdsDashboardConfig');
       if (savedConfig) return JSON.parse(savedConfig);
@@ -29,13 +26,13 @@ const App: React.FC = () => {
     return { margin_pct: 25, min_clicks_for_cr: 30 };
   });
 
-  const [filters, setFilters] = useState<Filters>(() => {
+  const [filters, setFilters] = useState(() => {
     try {
         const savedFilters = localStorage.getItem('wbAdsDashboardFilters');
         const savedTab = localStorage.getItem('wbAdsDashboardActiveTab');
         if (savedFilters) {
             const parsed = JSON.parse(savedFilters);
-            if(savedTab) setActiveTab(savedTab as Tab);
+            if(savedTab) setActiveTab(savedTab);
             delete parsed.dataSources; 
             return parsed;
         }
@@ -74,7 +71,7 @@ const App: React.FC = () => {
           return;
         }
 
-        let parsedData: RawDataRow[] = [];
+        let parsedData = [];
         if (activeTab === 'ads') {
             parsedData = parseAdsCSV(csvText);
             setCampaignIdOptions([...new Set(parsedData.map(item => item.campaignId).filter(Boolean))]);
@@ -103,7 +100,7 @@ const App: React.FC = () => {
     return () => clearTimeout(handler);
   }, [fetchData, isAuthenticated]);
   
-  const analyzedData: SkuAnalysisResult[] | null = useAnalytics(allData, filters, analyticsConfig);
+  const analyzedData = useAnalytics(allData, filters, analyticsConfig);
 
   useEffect(() => {
     if (status) {

@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import type { SkuAnalysisResult, Status, Metric } from '../types.js';
 import { ChevronDownIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ArrowUpIcon, ArrowDownIcon } from './icons.js';
 import Tooltip from './Tooltip.js';
 
-const statusClasses: Record<Status, string> = {
+const statusClasses = {
     good: 'bg-green-500',
     warn: 'bg-yellow-500',
     bad: 'bg-red-500',
@@ -11,11 +10,7 @@ const statusClasses: Record<Status, string> = {
     info: 'bg-blue-500',
 };
 
-const statusBadgeStyles: Record<Status, {
-    Icon: React.FC<React.SVGProps<SVGSVGElement>>;
-    bgColor: string;
-    textColor: string;
-}> = {
+const statusBadgeStyles = {
     good: { Icon: CheckCircleIcon, bgColor: 'bg-green-100', textColor: 'text-green-800' },
     warn: { Icon: ExclamationTriangleIcon, bgColor: 'bg-yellow-100', textColor: 'text-yellow-800' },
     bad: { Icon: XCircleIcon, bgColor: 'bg-red-100', textColor: 'text-red-800' },
@@ -29,11 +24,7 @@ const betterIfHigher = new Set([
     'orderedItems', 'avg_check', 'revenue', 'roas'
 ]);
 
-const TrendIndicator: React.FC<{
-    current: Metric;
-    previous: Metric;
-    metricKey: string;
-}> = ({ current, previous, metricKey }) => {
+const TrendIndicator = ({ current, previous, metricKey }) => {
     const currentValue = current.value;
     const previousValue = previous.value;
 
@@ -85,11 +76,7 @@ const metricKeys = columnsConfig
   .filter(key => key !== 'product' && key !== 'status');
 
 
-const MetricCell: React.FC<{ 
-    metric: Metric,
-    previousMetric: Metric | null,
-    metricKey: string,
-}> = ({ metric, previousMetric, metricKey }) => (
+const MetricCell = ({ metric, previousMetric, metricKey }) => (
     <Tooltip content={metric.tooltip}>
         <div className="flex items-center gap-2 whitespace-nowrap">
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusClasses[metric.status]}`}></span>
@@ -99,7 +86,7 @@ const MetricCell: React.FC<{
     </Tooltip>
 );
 
-const StatusBadge: React.FC<{ banner: SkuAnalysisResult['banner'] }> = ({ banner }) => {
+const StatusBadge = ({ banner }) => {
     const { Icon, bgColor, textColor } = statusBadgeStyles[banner.status] || statusBadgeStyles.neutral;
     return (
         <Tooltip content={banner.tooltip}>
@@ -111,7 +98,7 @@ const StatusBadge: React.FC<{ banner: SkuAnalysisResult['banner'] }> = ({ banner
     );
 };
 
-const SkuTableRow: React.FC<{ sku: SkuAnalysisResult }> = ({ sku }) => {
+const SkuTableRow = ({ sku }) => {
     const [isOpen, setIsOpen] = useState(false);
     const { periodTotals: pt } = sku;
     
@@ -133,7 +120,7 @@ const SkuTableRow: React.FC<{ sku: SkuAnalysisResult }> = ({ sku }) => {
                 </td>
                 {metricKeys.map(key => (
                     <td key={key} className="px-3 py-2.5 text-sm border-b border-slate-200">
-                        <MetricCell metric={pt.metrics[key as keyof typeof pt.metrics]} previousMetric={null} metricKey={key} />
+                        <MetricCell metric={pt.metrics[key]} previousMetric={null} metricKey={key} />
                     </td>
                 ))}
                 <td className="px-3 py-2.5 text-center border-b border-slate-200">
@@ -152,8 +139,8 @@ const SkuTableRow: React.FC<{ sku: SkuAnalysisResult }> = ({ sku }) => {
                         </td>
                         <td className="px-3 py-2.5 border-b border-slate-200">—</td>
                         {metricKeys.map(key => {
-                            const currentMetric = day.metrics[key as keyof typeof day.metrics];
-                            const previousMetric = previousDay ? previousDay.metrics[key as keyof typeof day.metrics] : null;
+                            const currentMetric = day.metrics[key];
+                            const previousMetric = previousDay ? previousDay.metrics[key] : null;
 
                             return (
                                 <td key={key} className="px-3 py-2.5 text-sm border-b border-slate-200">
@@ -173,11 +160,7 @@ const SkuTableRow: React.FC<{ sku: SkuAnalysisResult }> = ({ sku }) => {
     );
 };
 
-interface SkuTableProps {
-    data: SkuAnalysisResult[];
-}
-
-const SkuCard: React.FC<SkuTableProps> = ({ data }) => {
+const SkuCard = ({ data }) => {
     return (
         <div className="h-full overflow-auto bg-white rounded-xl border border-slate-200 shadow-sm">
             <table className="min-w-full border-collapse">

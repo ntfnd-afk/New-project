@@ -1,16 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 
-interface TooltipProps {
-  children: React.ReactElement;
-  content: React.ReactNode;
-}
-
-const Tooltip: React.FC<TooltipProps> = ({ children, content }) => {
+const Tooltip = ({ children, content }) => {
   const [visible, setVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const tooltipRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef(null);
+  const tooltipRef = useRef(null);
 
   const showTooltip = useCallback(() => {
     if (!triggerRef.current || !content) return;

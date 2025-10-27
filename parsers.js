@@ -1,7 +1,5 @@
-import type { RawDataRow } from './types.js';
-
-const parseCsvLine = (text: string): string[] => {
-    const result: string[] = [];
+const parseCsvLine = (text) => {
+    const result = [];
     let pos = 0;
     let inQuotes = false;
     let current = '';
@@ -36,7 +34,7 @@ const parseCsvLine = (text: string): string[] => {
 };
 
 
-export const parseAdsCSV = (csvText: string): RawDataRow[] => {
+export const parseAdsCSV = (csvText) => {
     const lines = csvText.trim().split('\n');
     if (lines.length < 2) return [];
 
@@ -61,7 +59,7 @@ export const parseAdsCSV = (csvText: string): RawDataRow[] => {
         revenue: headers.indexOf('Заказано на сумму, ₽'),
     };
     
-    const requiredHeaderMap: { [key in keyof typeof headerMap]?: string } = {
+    const requiredHeaderMap = {
         campaignId: 'ID кампании',
         trafficSource: 'Источник трафика',
         nmId: 'Артикул WB',
@@ -73,8 +71,8 @@ export const parseAdsCSV = (csvText: string): RawDataRow[] => {
     };
     
     const missingHeaders = Object.keys(requiredHeaderMap)
-        .filter(key => headerMap[key as keyof typeof headerMap] === -1)
-        .map(key => requiredHeaderMap[key as keyof typeof requiredHeaderMap]);
+        .filter(key => headerMap[key] === -1)
+        .map(key => requiredHeaderMap[key]);
 
     if (missingHeaders.length > 0) {
         throw new Error(`CSV должен содержать заголовки: ${missingHeaders.join(', ')}`);
@@ -82,12 +80,12 @@ export const parseAdsCSV = (csvText: string): RawDataRow[] => {
 
     const data = lines.slice(1).map(line => {
         const values = parseCsvLine(line);
-        const parseNumber = (index: number): number => {
+        const parseNumber = (index) => {
             if (values[index] === undefined) return 0;
             const value = values[index];
             return Number(value.replace(',', '.')) || 0;
         };
-        const getString = (index: number): string => values[index] || '';
+        const getString = (index) => values[index] || '';
         
         const dateString = getString(headerMap.date);
         let isoDate = dateString;
@@ -117,7 +115,7 @@ export const parseAdsCSV = (csvText: string): RawDataRow[] => {
 };
 
 
-export const getExportUrl = (userInput: string): string => {
+export const getExportUrl = (userInput) => {
     if (!userInput) return '';
 
     if (userInput.includes('/pub?output=csv') || userInput.includes('/export?format=csv')) {

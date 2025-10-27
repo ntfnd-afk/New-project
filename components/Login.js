@@ -1,10 +1,6 @@
 import React, { useState } from 'react';
 import { LoadingIcon } from './icons.js';
 
-interface LoginProps {
-    onLoginSuccess: () => void;
-}
-
 // Конфигурация доступа.
 const CORRECT_PIN = '164363';
 // URL таблицы хранится в закодированном виде (base64), чтобы не быть в открытом виде в коде.
@@ -12,19 +8,19 @@ const ENCODED_ADS_URL = 'aHR0cHM6Ly9kb2NzLmdvb2dsZS5jb20vc3ByZWFkc2hlZXRzL2QvMUg
 const URL_STORAGE_KEY = 'wb-ads-dashboard-urls';
 
 
-const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+const Login = ({ onLoginSuccess }) => {
     const [accessCode, setAccessCode] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleCodeChange = (e) => {
         const value = e.target.value.replace(/\D/g, ''); // Allow only digits
         if (value.length <= 6) {
             setAccessCode(value);
         }
     };
     
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = (e) => {
         e.preventDefault();
         setError('');
 

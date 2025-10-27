@@ -1,42 +1,14 @@
 import React from 'react';
-import type { Filters, AnalyticsConfig } from '../types.js';
 import { RefreshIcon, ResetIcon, LogoutIcon } from './icons.js';
 
-type Tab = 'ads' | 'orders';
-
-interface HeaderProps {
-  filters: Filters;
-  setFilters: React.Dispatch<React.SetStateAction<Filters>>;
-  onReload: () => void;
-  loading: boolean;
-  campaignIdOptions: string[];
-  nmIdOptions: string[];
-  appTypeOptions: string[];
-  activeTab: Tab;
-  setActiveTab: React.Dispatch<React.SetStateAction<Tab>>;
-  onLogout: () => void;
-  analyticsConfig: AnalyticsConfig;
-  setAnalyticsConfig: React.Dispatch<React.SetStateAction<AnalyticsConfig>>;
-}
-
-interface ControlGroupProps {
-    label: string;
-    children: React.ReactNode;
-}
-
-const ControlGroup: React.FC<ControlGroupProps> = ({ label, children }) => (
+const ControlGroup = ({ label, children }) => (
     <div className="flex flex-col gap-1.5">
         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</label>
         {children}
     </div>
 );
 
-const TabButton: React.FC<{
-  tabId: Tab;
-  activeTab: Tab;
-  onClick: (tabId: Tab) => void;
-  children: React.ReactNode;
-}> = ({ tabId, activeTab, onClick, children }) => {
+const TabButton = ({ tabId, activeTab, onClick, children }) => {
   const isActive = tabId === activeTab;
   return (
     <button
@@ -53,19 +25,19 @@ const TabButton: React.FC<{
 };
 
 
-const Header: React.FC<HeaderProps> = ({ 
+const Header = ({ 
     filters, setFilters, onReload, loading, campaignIdOptions, nmIdOptions, 
     appTypeOptions, activeTab, setActiveTab, onLogout, analyticsConfig, setAnalyticsConfig 
 }) => {
   
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e) => {
     const { id, name, value, type } = e.target;
     const key = name || id;
-    const val = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+    const val = type === 'checkbox' ? e.target.checked : value;
     setFilters(prev => ({ ...prev, [key]: val }));
   };
 
-  const handleConfigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleConfigChange = (e) => {
       const { id, value } = e.target;
       const numValue = parseFloat(value);
       if (!isNaN(numValue)) {

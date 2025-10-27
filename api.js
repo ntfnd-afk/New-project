@@ -12,20 +12,20 @@ const URL_STORAGE_KEY = 'wb-ads-dashboard-urls';
 /**
  * Проверяет, аутентифицирован ли пользователь.
  */
-const isUserAuthenticated = (): boolean => {
+const isUserAuthenticated = () => {
     return sessionStorage.getItem('isAuthenticated') === 'true';
 };
 
 // Простой CORS-прокси для обхода ограничений браузера.
 // Внимание: бесплатные прокси могут быть ненадежными.
-const CORS_PROXY = (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`;
+const CORS_PROXY = (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`;
 
 /**
  * Симулирует получение данных с бэкенда.
  * @param dataType Тип запрашиваемых данных ('ads' или 'orders').
  * @returns Текст CSV файла.
  */
-export const fetchDataFromApi = async (dataType: 'ads' | 'orders'): Promise<string> => {
+export const fetchDataFromApi = async (dataType) => {
     if (!isUserAuthenticated()) {
         throw new Error('Пользователь не авторизован.');
     }

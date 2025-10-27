@@ -1,7 +1,7 @@
 import React from 'react';
 import ChartPanel from './ChartPanel.js';
 
-const OrdersDashboard: React.FC = () => {
+const OrdersDashboard = () => {
     return (
         <div className="flex items-center justify-center h-full">
             <ChartPanel title="Аналитика по Заказам">

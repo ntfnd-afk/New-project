@@ -1,7 +1,5 @@
-import type { Status, AnalyticsConfig, Metric, SkuMetricsSet, SkuAnalysisResult } from '../types.js';
-
 // Helper for safe division
-const safeDivide = (numerator: number, denominator: number): number | null => {
+const safeDivide = (numerator, denominator) => {
     if (denominator === 0) {
         // Handle 0/0 as 0, and N/0 (where N>0) as null (infinity)
         return numerator === 0 ? 0 : null;
@@ -12,24 +10,7 @@ const safeDivide = (numerator: number, denominator: number): number | null => {
 
 // --- Metric Configuration ---
 
-interface AggregatedData {
-    impressions: number;
-    clicks: number;
-    orderedItems: number;
-    spend: number;
-    revenue: number;
-    added_to_cart: number;
-}
-
-const metricConfig: Record<string, {
-    formula: string;
-    canCalculate: (d: AggregatedData) => boolean;
-    nullTooltip: string;
-    statusTexts: Partial<Record<Status, string>>;
-    getStatus?: (value: number, config: AnalyticsConfig, data: AggregatedData) => Status;
-    unit?: '%' | '₽' | '';
-    isSimple?: boolean;
-}> = {
+const metricConfig = {
     // Traffic
     impressions: {
         formula: 'Сумма показов за период.',
@@ -181,7 +162,7 @@ const metricConfig: Record<string, {
 
 // --- Status Calculation Logic ---
 
-const getStatusForMetric = (metricName: string, value: number, config: AnalyticsConfig): Status => {
+const getStatusForMetric = (metricName, value, config) => {
     if (value === null || !isFinite(value)) return 'neutral';
     switch (metricName) {
         case 'impressions':
@@ -237,7 +218,7 @@ const getStatusForMetric = (metricName: string, value: number, config: Analytics
     }
 };
 
-const getTooltip = (metricKey: string, status: Status, isCalculable: boolean): string => {
+const getTooltip = (metricKey, status, isCalculable) => {
     const config = metricConfig[metricKey];
     if (!config) return '';
 
@@ -253,9 +234,9 @@ const getTooltip = (metricKey: string, status: Status, isCalculable: boolean): s
 };
 
 
-export const calculateMetricsSet = (aggregatedData: AggregatedData, config: AnalyticsConfig): SkuMetricsSet => {
+export const calculateMetricsSet = (aggregatedData, config) => {
     
-    const values: Record<string, number | null> = {
+    const values = {
         ...aggregatedData,
         ctr: safeDivide(aggregatedData.clicks, aggregatedData.impressions),
         cpc: safeDivide(aggregatedData.spend, aggregatedData.clicks),
@@ -273,7 +254,7 @@ export const calculateMetricsSet = (aggregatedData: AggregatedData, config: Anal
         const value = values[key];
         const isCalculable = value !== null;
 
-        let status: Status = 'neutral';
+        let status = 'neutral';
         if (isCalculable && value !== null && isFinite(value)) {
              status = getStatusForMetric(key, value, config);
         }
@@ -288,7 +269,7 @@ export const calculateMetricsSet = (aggregatedData: AggregatedData, config: Anal
 
         const tooltip = getTooltip(key, status, isCalculable);
         
-        let displayValue: string;
+        let displayValue;
         if (!isCalculable || value === null || !isFinite(value)) {
             displayValue = '—';
         } else {
@@ -315,14 +296,14 @@ export const calculateMetricsSet = (aggregatedData: AggregatedData, config: Anal
         }
 
 
-        acc[key as keyof SkuMetricsSet['metrics']] = { value, status, tooltip, displayValue };
+        acc[key] = { value, status, tooltip, displayValue };
         return acc;
-    }, {} as SkuMetricsSet['metrics']);
+    }, {});
     
     return { ...aggregatedData, metrics };
 };
 
-const getRecommendationTooltip = (status: Status, metricsSet: SkuMetricsSet, aggregates: AggregatedData): string => {
+const getRecommendationTooltip = (status, metricsSet, aggregates) => {
   const { metrics } = metricsSet;
   const { impressions, revenue, spend, orderedItems } = aggregates;
 
@@ -362,7 +343,7 @@ const getRecommendationTooltip = (status: Status, metricsSet: SkuMetricsSet, agg
 
   // Case B: "Требует внимания"
   if (status === 'warn') {
-    const tips: string[] = [];
+    const tips = [];
     if (metrics.ctr.status === 'warn' || metrics.ctr.status === 'bad') {
       tips.push('Низкая кликабельность. Проверьте 1-е фото и заголовок (цена/УТП).');
     }
@@ -394,12 +375,12 @@ const getRecommendationTooltip = (status: Status, metricsSet: SkuMetricsSet, agg
 };
 
 
-export const getBannerAndStatus = (aggregatedData: AggregatedData, metricsSet: SkuMetricsSet): { banner: SkuAnalysisResult['banner'] } => {
+export const getBannerAndStatus = (aggregatedData, metricsSet) => {
     
     const { spend, impressions, orderedItems } = aggregatedData;
     const { metrics } = metricsSet;
     
-    let overallStatus: Status = 'neutral';
+    let overallStatus = 'neutral';
     
     const financialMetrics = { cpa: metrics.cpa.status, roas: metrics.roas.status, drr: metrics.drr.status };
     const performanceMetrics = { ctr: metrics.ctr.status, cr: metrics.cr.status };
@@ -415,7 +396,7 @@ export const getBannerAndStatus = (aggregatedData: AggregatedData, metricsSet: S
         overallStatus = 'good';
     }
     
-    let shortText: string;
+    let shortText;
     
     if (impressions === 0) {
         shortText = 'Реклама не откручивается';

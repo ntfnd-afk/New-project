@@ -1,17 +1,7 @@
 import { useMemo } from 'react';
-import type { RawDataRow, Filters, SkuAnalysisResult, AnalyticsConfig, DailyData } from '../types.js';
 import { calculateMetricsSet, getBannerAndStatus } from '../utils/analytics.js';
 
-interface AggregatedData {
-    spend: number;
-    impressions: number;
-    clicks: number;
-    orderedItems: number;
-    revenue: number;
-    added_to_cart: number;
-}
-
-const aggregateRows = (rows: RawDataRow[]): AggregatedData => {
+const aggregateRows = (rows) => {
     return rows.reduce((acc, item) => {
         acc.spend += item.spend;
         acc.impressions += item.shows;
@@ -31,10 +21,10 @@ const aggregateRows = (rows: RawDataRow[]): AggregatedData => {
 };
 
 export const useAnalytics = (
-    allData: RawDataRow[] | null,
-    filters: Filters,
-    config: AnalyticsConfig
-): SkuAnalysisResult[] | null => {
+    allData,
+    filters,
+    config
+) => {
 
     return useMemo(() => {
         if (!allData) return null;
@@ -57,7 +47,7 @@ export const useAnalytics = (
 
         if (filteredData.length === 0) return [];
 
-        const groupedBySku: { [key: string]: RawDataRow[] } = {};
+        const groupedBySku = {};
         for (const item of filteredData) {
             if (!item.nmId) continue;
             if (!groupedBySku[item.nmId]) {
@@ -66,11 +56,11 @@ export const useAnalytics = (
             groupedBySku[item.nmId].push(item);
         }
         
-        const analyzedResults: SkuAnalysisResult[] = [];
+        const analyzedResults = [];
         for (const nmId in groupedBySku) {
             const skuRows = groupedBySku[nmId];
 
-            const groupedByDay: { [key: string]: RawDataRow[] } = {};
+            const groupedByDay = {};
             for (const item of skuRows) {
                 const day = item.date.split('T')[0];
                 if (!groupedByDay[day]) {
@@ -79,7 +69,7 @@ export const useAnalytics = (
                 groupedByDay[day].push(item);
             }
 
-            const daily: DailyData[] = Object.entries(groupedByDay).map(([date, rows]) => {
+            const daily = Object.entries(groupedByDay).map(([date, rows]) => {
                 const dailyAggregates = aggregateRows(rows);
                 const metricsSet = calculateMetricsSet(dailyAggregates, config);
                 return { date, ...metricsSet };
