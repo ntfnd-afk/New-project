@@ -13,10 +13,10 @@
         overflow: hidden; /* Prevent body scrollbars */
       }
     </style>
-    <!-- 1. Load SystemJS and the Babel plugin -->
+    
+    <!-- 1. Load dependencies: SystemJS and Babel for transpilation -->
     <script src="https://unpkg.com/systemjs@6.14.3/dist/s.min.js"></script>
-    <script src="https://unpkg.com/systemjs-plugin-babel@0.0.25/plugin-babel.js"></script>
-    <script src="https://unpkg.com/systemjs-plugin-babel@0.0.25/systemjs-babel-browser.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
 
     <!-- 2. Provide an import map for SystemJS -->
     <script type="systemjs-importmap">
@@ -31,45 +31,44 @@
 
     <!-- 3. Configure SystemJS to use Babel for TS/TSX files -->
     <script>
+      // Use the global "Babel" object from @babel/standalone to transpile modules.
+      System.set('plugin-babel', {
+        translate: function (load) {
+          // Babel will transpile the code, using presets to understand React (JSX) and TypeScript.
+          var babelized = Babel.transform(load.source, {
+            presets: ['react', 'typescript'],
+            filename: load.address // Provides better error messages
+          });
+          return babelized.code;
+        }
+      });
+
+      // Tell SystemJS to use our Babel plugin for .ts and .tsx files.
       System.config({
-        // Use the babel plugin to transpile files
-        transpiler: 'plugin-babel',
-        // Pass options to babel
-        babelOptions: {
-          presets: ['react', 'typescript']
-        },
-        // Tell SystemJS where to find the babel plugin
-        map: {
-          'plugin-babel': 'https://unpkg.com/systemjs-plugin-babel@0.0.25/plugin-babel.js',
-          'systemjs-babel-build': 'https://unpkg.com/systemjs-plugin-babel@0.0.25/systemjs-babel-browser.js'
-        },
-        // Tell SystemJS which files need transpiling
         meta: {
-          '*.tsx': {
-            loader: 'plugin-babel'
-          },
-          '*.ts': {
-            loader: 'plugin-babel'
-          }
+          '*.tsx': { loader: 'plugin-babel' },
+          '*.ts': { loader: 'plugin-babel' }
         }
       });
     </script>
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-    <!-- 4. Start the app via SystemJS -->
+    <!-- 4. Start the app by importing the main entry point -->
     <script>
-      System.import('./index.tsx');
+      System.import('./index.tsx').catch(function(err) {
+        console.error("SystemJS Error:", err);
+      });
     </script>
   </body>
 </html>
